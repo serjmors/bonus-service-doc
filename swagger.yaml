@@ -443,7 +443,6 @@ paths:
           schema:
             properties:
               user:
-                type: object
                 $ref: '#/definitions/User_object'
                 
       responses:
@@ -611,7 +610,6 @@ paths:
                     image: URI
                     read: true/false
               pagination:
-                type: object
                 $ref: '#/definitions/Pagination_object'
               
       responses:
@@ -995,7 +993,6 @@ definitions:
                 price: 10.5
                 discount: 2
       pagination:
-        type: object
         $ref: '#/definitions/Pagination_object'
 
   ListCommentResponse:
@@ -1027,7 +1024,6 @@ definitions:
             shop_id:
             image:
       pagination:
-        type: object
         $ref: '#/definitions/Pagination_object'
   
   ImageResponse:
@@ -1062,7 +1058,6 @@ definitions:
         readOnly: true
         example: Операция выполнена
       user:
-        type: object
         $ref: '#/definitions/User_object'
   
   GetOrganizationInformationResponse:
@@ -1077,7 +1072,6 @@ definitions:
         readOnly: true
         example: Операция выполнена
       organization:
-        type: object
         $ref: '#/definitions/Organization_object'
   
   CardInformationResponse:
@@ -1092,7 +1086,6 @@ definitions:
         readOnly: true
         example: Операция выполнена
       card:
-        type: object
         $ref: '#/definitions/Card_object'
   
   ListCardUserResponse:
@@ -1129,7 +1122,6 @@ definitions:
             image: http://dns/res/hh2384j5.png
         
       pagination:
-        type: object
         $ref: '#/definitions/Pagination_object'
   
   BalanceCardResponse:
