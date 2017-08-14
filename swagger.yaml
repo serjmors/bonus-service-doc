@@ -6,7 +6,7 @@ info:
   contact:
     email: bonus@rarus.ru
   x-logo:
-    url: "rarus_logo.png"
+    url: "https://serjmors.github.io/bonus-service-doc/rarus_logo.png"
     backgroundColor: "#FFFFFF" 
     
 x-tagGroups:
