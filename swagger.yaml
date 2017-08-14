@@ -1,0 +1,1383 @@
+swagger: '2.0'
+info:
+  description: ...
+  version: 1.0.0
+  title: Бонусный сервис
+  contact:
+    email: bonus@rarus.ru
+tags: 
+  - name: Авторизация
+  - name: Регистрация
+  - name: Действия над паролем пользователя
+  - name: Профили пользователей
+  - name: Организации
+  - name: Карты
+  - name: Оповещения
+  - name: Отзывы
+  - name: Настройки поведения приложения
+  - name: История продаж
+  - name: Акции
+  - name: Магазины
+  - name: Изображения
+  
+schemes:
+ - http
+ - https
+ 
+produces: 
+  - application/json
+  
+consumes: 
+  - application/json
+ 
+paths:
+  /sign_in:
+    post:
+      tags: 
+        - Авторизация
+      summary: Авторизация пользователя сервиса, выдача токена доступа в обмен на логин и пароль
+      description: |
+        Выполняет поиск соответствия логина, пароля и session_id в таблицах:
+      
+        Если указана роль “organization”, поиск выполняется в таблице BonusMasterDB.bsOrganisations
+        
+        Token выдается пользователю с учетом этого session_id. Т.е. пользователь может авторизоваться под собой из нескольких разных приложений, соответственно будут выданы несколько token. Также используется для последующего обновления авторизации.
+      
+        Если указана роль “client”, обязательно проверяется наличие заполненного идентификатора организации. Поиск выполняется в таблице организации BonusDB_X.bsUsers.
+        
+        Если учетная запись пользователя не подтверждена, метод возвращает ошибку.
+        
+        
+        Если найдено соответствие в таблицу bsTokens записывается:
+        - новый токен, 
+        - дата его “протухания”(now() + 10 min).
+        - Все последующие запросы требуют указания токена в заголовке запроса.
+      
+      parameters: 
+        - in: body
+          name: body
+          description: Объект авторизации
+          schema:
+            type: object
+            required: 
+              - login
+              - password
+              - role
+            properties:
+              login:
+                type: string
+                description: Логин организации или пользователя сервиса, в зависимости от указанной роли в поле `role`
+                example: mors@rarus.ru
+                
+              password:
+                type: string
+                description: Sha1-Хэш пароля
+                example: hfinerpgn56uh40g7
+                
+              session_id:
+                type: string
+                example: 123
+              organization_id:
+                type: integer
+                example: 25
+              role:
+                $ref: '#/definitions/Roles'
+              
+      responses:
+        200:
+          description: Успешная авторизация
+          schema:
+            $ref: '#/definitions/AuthResponse'
+    
+  /sign_refresh:
+    parameters: 
+      - $ref: '#/parameters/access_token'
+    post:
+      tags: 
+        - Авторизация
+      summary: Обновление авторизации пользователя сервиса
+      description: |
+        При выполнении запроса, в таблице bsTokens выполняется поиск записи по полю session_id и token. 
+        - Если запись найдена и token не “протух”, сервер генерирует новый token и устанавливает новую дату протухания token;
+        - Если запись найдена и token “протух” - необходима повторная авторизация.
+
+      parameters: 
+        - in: body
+          name: body
+          description: Обновление авторизации
+          schema:
+            type: object
+            required: 
+              - session_id
+            properties:
+              session_id:
+                type: string
+                description: идентификатор сессии
+                example: 123
+
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/AuthResponse'
+  
+  /sign_out:
+    parameters: 
+      - $ref: '#/parameters/access_token'
+    delete:
+      tags: 
+        - Авторизация
+      summary: Выход из учетной записи
+      description: Удаляем запись из таблицы bsTokens.
+
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+
+  /user/new:
+    post:
+      tags: 
+       - Регистрация
+      summary: Регистрация нового пользователя
+      description: |
+        - При выполнении метода проверяются настройки организации:
+          - AllowClientRegistration. Если 0 или отсутствует, регистрация новых пользователей под ролью клиента запрещена. Регистрация учетных записей выполняется менеджером организации.
+          - ConfirmationMethod
+            - None - Подтверждение данных авторизации не требуется. Создаем учетную запись;
+            - Phone - Требуется подтверждение телефона;
+            - Email - Требуется подтверждение электронной почты.
+        - При необходимости подтверждения данных авторизации сервер отвечает, что нужно передать код активации. Учетная запись пользователя создается с пометкой не авторизована.
+      parameters: 
+        - in: body
+          name: body
+          description: Регистрация пользователя
+          schema:
+            type: object
+            required: 
+              - role
+              - name
+              - login
+              - password
+              - email
+              - birthdate
+            properties:
+              role:
+                $ref: '#/definitions/Roles'
+              name:
+                type: string
+                example: Иван
+              login:
+                type: string
+                description: Логин организации или пользователя сервиса, в зависимости от указанной роли в поле `role`
+                example: mors@rarus.ru
+              password:
+                type: string
+                description: Sha1-Хэш пароля
+                example: hfinerpgn56uh40g7
+              phone:
+                type: string
+                example: +79781234567
+              email:
+                type: string
+                description: адрес электронной почты регистрируемого пользователя
+                example: mors@rarus.ru
+              birthdate:
+                type: string
+                example: 01.01.1984
+              gender:
+                type: string
+                example: male/female
+              company_id:
+                type: integer
+                example: 33
+              
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+    
+  /user/sign_in/send_confirmation_code:
+    post:
+      tags: 
+        - Регистрация
+      summary: Получение кода подтверждения
+      description: |
+        Выполняется запрос отправки СМС или Email c кодом подтверждения. Код генерируется с помощью алгоритма TOTP. В качестве кода используется 6-ти значная последовательность цифр в получившемся хэше.
+        
+        В качестве времени действия пароля используется параметр “ConfirmationCodeLifetime” в секундах.
+        
+        В качестве секретной фразы используется логин пользователя.
+        
+        Параметр  ConfirmationSeqPeriod определяет период в секундах, в течении, которого возможна повторная отправка.
+        
+        Параметр  ConfirmationAttemptsLimit определяет количество доступных попыток повторной отправки кода подтверждения в течении времени ConfirmationSeqPeriod.
+        
+        Если пользователь уже авторизован, метод возвращает ошибку.
+        
+        В тексте сообщения выводим код и ссылку. Делаем метод для подтверждение ссылки.
+      parameters: 
+        - in: body
+          name: body
+          description: Код подтверждения
+          schema:
+            type: object
+            required: 
+              - login
+              - company_id
+            properties:
+              login:
+                type: string
+                description: Логин организации или пользователя сервиса, в зависимости от указанной роли в поле `role`
+                example: mors@rarus.ru
+              company_id:
+                type: integer
+                example: 12
+      responses:
+        200:
+          description: Ok
+          schema:
+            $ref: '#/definitions/ResponseOk'
+  
+  /user/sign_in/confirm:
+    post:
+      tags: 
+        - Регистрация
+      summary: Подтверждение регистрации
+      description: |
+        Пользователь посылает код на сервер,  сервер снова рассчитывает хэш, сравнивает с полученным кодом. Если данные совпадают, учетная запись помечается как подтвержденная.
+      parameters: 
+        - in: body
+          name: body
+          schema:
+            required: 
+              - login
+              - code
+              - company_id
+            properties:
+              login:
+                type: string
+                description: Логин организации или пользователя сервиса, в зависимости от указанной роли в поле `role`
+                example: mors@rarus.ru
+              code:
+                type: integer
+                example: 235674
+              company_id:
+                type: integer
+                example: 12
+              
+      responses:
+        200:
+          description: Ok
+          schema:
+            $ref: '#/definitions/ResponseOk'
+    
+  /user/change_password:
+    parameters: 
+        - $ref: '#/parameters/access_token'
+    post:
+      tags: 
+        - Действия над паролем пользователя
+      summary: Изменение пароля
+      description: Изменение пароля пользователя
+      parameters: 
+        - in: body
+          name: body
+          schema:
+            required: 
+              - password              
+              - newpass
+            properties:
+              password:
+                type: string
+                description: Sha1-Хэш пароля
+                example: jdjfhgwjej
+              newpass:
+                type: string
+                description: Sha1-Хэш пароля
+                example: 12345              
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+  
+  /user/change_password/confirm:
+    parameters: 
+      - $ref: '#/parameters/access_token'
+    post:
+      tags: 
+        - Действия над паролем пользователя
+      summary: Подтверждение изменения пароля 
+      description: Подтверждение изменения пароля пользователя
+      parameters: 
+        - in: body
+          name: body
+          schema:
+            required: 
+              - code
+            properties:
+              code:
+                type: integer
+                example: 123456
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+  
+  /user/reset_password:
+    post:
+      tags: 
+        - Действия над паролем пользователя
+      summary: Восстановление пароля
+      description: Восстановление пароля пользователя
+      parameters: 
+        - in: body
+          name: body
+          schema:
+            required: 
+              - login
+              - company_id
+            properties:
+              login:
+                type: string
+                description: Логин организации или пользователя сервиса, в зависимости от указанной роли в поле `role`
+                example: mors@rarus.ru
+              company_id:
+                type: integer
+                example: 12
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+  
+  /user/reset_password/confirm:
+    post:
+      tags: 
+       - Действия над паролем пользователя
+      summary: Подтверждение восстановления пароля
+      description: Подтверждение восстановления пароля пользователя
+      parameters: 
+        - in: body
+          name: body
+          schema:
+            required: 
+              - login
+              - code
+              - company_id
+            properties:
+              login:
+                type: string
+                description: Логин организации или пользователя сервиса, в зависимости от указанной роли в поле `role`
+                example: mors@rarus.ru
+              code:
+                type: integer
+                example: 235674
+              company_id:
+                type: integer
+                example: 12              
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+  
+  /user:
+    parameters: 
+      - $ref: '#/parameters/access_token'
+    get:
+      tags: 
+       - Профили пользователей
+      summary: Получить информацию о пользователе
+      description: Получить информацию о пользователе 
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/GetUserInformationResponse'
+  
+  /user/update:
+    put:
+      tags: 
+        - Профили пользователей
+      summary: Обновить информацию о пользователе
+      description: Обновить информацию о пользователе 
+      parameters: 
+        - in: body
+          name: body
+          schema:
+            properties:
+              user:
+                type: object
+                $ref: '#/definitions/User_object'
+                
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+  
+  /user/organization_info:
+    parameters: 
+      - $ref: '#/parameters/access_token'
+    get:
+      tags: 
+        - Организации
+      summary: Получить информацию об организации
+      description: Получить информацию об организации
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/GetOrganizationInformationResponse'
+    
+  /user/card/add:
+    parameters: 
+      - $ref: '#/parameters/access_token'
+    post:
+      tags: 
+        - Карты
+      summary: Регистрация новой карты
+      description: |
+        Метод не генерирует новую карту, находит первую свободную карту (UserId, Email,Phone=’’ExternalCard=0) и закрепляет пользователя за ней.
+      parameters: 
+        - in: body
+          name: body
+          schema:
+            required: 
+              - name
+            properties:
+              name:
+                type: string
+                example: Бонусная карта 
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/CardInformationResponse'
+  
+  /user/card/attach:
+    parameters: 
+      - $ref: '#/parameters/access_token'
+    post:
+      tags: 
+        - Карты
+      summary: Привязка существующей карты 
+      description: |
+        Метод проверяет наличие карты в базе по указанному штрихкоду, если карта найдена проверяется соответствие данных авторизации и телефона/почты в таблице карт. Если данные совпадают и карта не является внутренней(признак ExternalCard установлен в 0), пользователю отправляется код подтверждения на электронную почта или телефон в зависимости от настроек организации.
+      parameters:
+        - in: body
+          name: body
+          schema:
+            required: 
+              - barcode
+            properties:
+              barcode:
+                type: string
+                example: 1236547894562
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+    
+  /user/card/attach/confirm:
+    parameters: 
+      - $ref: '#/parameters/access_token'
+    post:
+      tags: 
+        - Карты
+      summary: Подтверждение привязки карты
+      description: Подтверждение привязки карты
+      parameters: 
+        - in: body
+          name: body
+          schema:
+            required: 
+              - barcode
+              - code
+            properties:
+              barcode:
+                type: string
+                example: 1236547894562
+              code:
+                type: integer
+                example: 111
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+  
+  /user/card/get_list:
+    parameters:
+      - $ref: '#/parameters/page'
+      - $ref: '#/parameters/per_page'
+      - $ref: '#/parameters/access_token'      
+    get:
+      tags: 
+        - Карты
+      summary: Получить список карт пользователя
+      description: Получить список карт пользователя
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ListCardUserResponse'
+    
+  /user/card/card_id/balance_info:
+    parameters: 
+      - $ref: '#/parameters/card_id'
+      - $ref: '#/parameters/last_transactions'
+      - $ref: '#/parameters/access_token'
+      
+    get:
+      tags: 
+        - Карты
+      summary: Получить расшифровку баланса карты
+      description: Получить расшифровку баланса карты
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/BalanceCardResponse'
+  
+  /user/notification:
+    parameters:
+      - $ref: '#/parameters/from'
+      - $ref: '#/parameters/expired'
+      - $ref: '#/parameters/read'
+      - $ref: '#/parameters/page'
+      - $ref: '#/parameters/per_page'
+      - $ref: '#/parameters/access_token'      
+    get:
+      tags: 
+        - Оповещения
+      summary: Получить список оповещений
+      description: Получить список оповещений
+      parameters: 
+        - in: body
+          name: body
+          schema:
+            required: 
+              - notifications
+              - pagination
+            properties:
+              notifications:
+                type: array
+                minItems: 1
+                example: 
+                  - id:
+                    title: 
+                    text: 
+                    start_date:
+                    expiration_date:
+                    expired: true/false
+                    image: URI
+                    read: true/false
+              pagination:
+                type: object
+                $ref: '#/definitions/Pagination_object'
+              
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+            
+  /user/notification/notification_id/check:
+    parameters: 
+      - $ref: '#/parameters/notification_id'
+      - $ref: '#/parameters/access_token'
+    put:
+      tags: 
+        - Оповещения
+      summary: Пометить оповещение как прочитанное 
+      description: Пометить оповещение как прочитанное 
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+  
+  /user/comment:
+    parameters: 
+      - $ref: '#/parameters/access_token'
+    post:
+      tags: 
+        - Отзывы
+      summary: Отправить отзыв
+      description: Отправить отзыв
+      parameters: 
+        - in: body
+          name: body
+          schema:
+            required: 
+              - id
+              - title
+              - comment
+              - rating
+            properties:
+              id:
+                type: string
+                description: |
+                  Идентификатор. Для возможности передать картинку. Если не указать, то идентификатор создастся автоматически
+                example: 112233
+              title:
+                type: string
+                description: Заголовок
+              comment:
+                type: string
+                description: Комментарий
+              rating:
+                type: integer
+                description: Оценка
+                example: 3
+
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ImageResponse'
+    get:
+      tags: 
+        - Отзывы
+      summary: Получить список отзывов 
+      description: Получить список отзывов 
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ListCommentResponse'
+  
+  /user/settings/company_id:
+    parameters: 
+      - $ref: '#/parameters/company_id'
+    get:
+      tags: 
+        - Настройки поведения приложения
+      summary: Получить настройки организации
+      description: Получить настройки организации 
+      responses:
+        200:
+          description: OK
+          schema:
+            required: 
+              - settings
+            properties:
+              settings:
+                type: array
+                minItems: 1
+                example: 
+                  - name: Allow
+                    value: 1
+                    description: blah-blah
+                    interface_name: Разрешить запретить
+
+  /user/sales_history:
+    parameters: 
+      - $ref: '#/parameters/card_id'
+      - $ref: '#/parameters/from'
+      - $ref: '#/parameters/page'
+      - $ref: '#/parameters/per_page'
+      - $ref: '#/parameters/access_token'
+    get:
+      tags: 
+        - История продаж
+      summary:  Получить историю продаж
+      description: Получить историю продаж
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/SalesHistoryResponse'
+  
+  /user/promotion:
+    parameters: 
+      - $ref: '#/parameters/from'
+      - $ref: '#/parameters/access_token'
+    get:
+      tags: 
+        - Акции
+      summary: Получить список акций
+      description: Получить список акций
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ListPromotionResponse'
+  
+  /user/shop:
+    parameters: 
+      - in: query
+        name: schedules
+        type: string
+        required: false
+        description: Расписание
+      - $ref: '#/parameters/page'
+      - $ref: '#/parameters/per_page'
+      - $ref: '#/parameters/access_token'
+    get:
+      tags: 
+        - Магазины
+      summary: Получить список магазинов 
+      description: Получить список магазинов
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ShopResponse'
+  
+  /user/set_image/entity_name/id:
+    parameters: 
+      - in: query
+        name: entity_name
+        type: string
+        required: false
+        description: Наименование предприятия
+      - in: query
+        name: id
+        type: string
+        required: false
+        description: Идентификатор
+      - $ref: '#/parameters/access_token'
+        
+    post:
+      tags: 
+        - Изображения
+      summary: Отправить изображение
+      description: |
+        Параметр entity_name определяет сущность для которой нужно обновить картинку. Допустимые имена:
+        - promotion
+      parameters: 
+        - in: body
+          name: body
+          schema:
+            properties:
+              URL:
+                type: string
+                description: Путь к изображению
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/ResponseOk'
+
+parameters:
+  access_token:
+    in: header
+    name: token
+    type: string
+    required: true
+    description: Токен доступа к API
+  
+  page:
+    in: query
+    name: Page    
+    type: integer
+    required: false
+    description: Страница
+    default: 1
+    
+  per_page:
+    in: query
+    name: Per_page
+    type: integer
+    required: false
+    description: Количество на странице
+    default: 10
+  
+  card_id:
+    in: query
+    name: card_id
+    type: integer
+    required: false
+    description: Идентификатор карты
+  
+  last_transactions:
+    in: query
+    name: last_transactions
+    type: integer
+    required: false
+    description: Количество последних транзакций
+  
+  from:
+    in: query
+    name: from    
+    type: string
+    required: false
+    description: Если не указан - все сообщения
+
+  expired:
+    in: query
+    name: expired
+    type: string
+    required: false
+    description: Если не указан фильтр не 
+  
+  read:
+    in: query
+    name: Read    
+    type: string
+    required: false
+    description: Если не указан - все сообщения
+  
+  notification_id:
+    in: query
+    name: notification_id
+    type: string
+    required: false
+    description: Идентификатор уведомления
+  
+  company_id:
+    in: query
+    name: company_id
+    type: string
+    required: false
+    description: Идентификатор компании
+
+definitions:
+
+  ResponseOk:
+    description: Ответ операция выполнена
+    type: object
+    properties:
+      code:
+        type: integer
+        readOnly: true
+      massage:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+
+  ShopResponse:
+    description: Vfufpbys
+    type: object
+    properties:
+      code:
+        type: integer
+        readOnly: true
+      massage:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+      shops:
+        type: array
+        minItems: 1
+        example: 
+          - id:
+            name:
+            latitude: 40.7127837
+            longitude: -74.00594130000002
+            adress:
+            phone:
+            time_zone: // временная зона в миллисекундах
+            schedule: 
+              - day_start: 1
+                day_end: 5
+                status: open/closed
+                time_start: 123234
+                time_end: 12312
+      
+  ListPromotionResponse:
+    description: Список акций
+    type: object
+    properties:
+      code:
+        type: integer
+        readOnly: true
+      massage:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+      promotions:
+        type: array
+        minItems: 1
+        example: 
+          - id:
+            start_date: ms
+            end_date: ms
+            shop_id:
+            name:
+            short_description:
+            full_description:
+            promo_url:
+            image: http://demo.rarus-online.com/get_image/3/promotion/4.png?hash=96207AC6D11D971D7882B55857A95550
+
+  AuthResponse:
+    description: Ответ авторизации
+    type: object
+    properties:
+      code: 
+        type: integer
+        readOnly: true
+      message:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+      token:
+        type: string
+        readOnly: true
+      expires:
+        type: string
+        description: Время доступности выданного token в секундах.
+        readOnly: true
+      company_id: 
+        type: integer
+        description: Возвращается при авторизации под ролью `organization`
+        readOnly: true
+  
+  SalesHistoryResponse:
+    description: Ответ получить историю продаж
+    type: object
+    properties:
+      code:
+        type: integer
+        readOnly: true
+      massage:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+      history:
+        type: array
+        items:
+          - $ref: '#/definitions/Sale_object' 
+        minItems: 1
+        example: 
+          - id:
+            date: ms
+            operation: sale/refund
+            shop_id:
+            shop_name:
+            shop_address:
+            check_sum:
+            bonus_sum:
+            cashbox:
+            check_number:
+            details:
+              - item: Куртка
+                quantity: 1
+                price: 10.5
+                discount: 2
+      pagination:
+        type: object
+        $ref: '#/definitions/Pagination_object'
+
+  ListCommentResponse:
+    description: Ответ операция выполнена
+    type: object
+    required: 
+      - code
+      - massage
+      - comments
+    properties:
+      code:
+        type: integer
+        readOnly: true
+      massage:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+      comments:
+        type: array
+        minItems: 1
+        example: 
+          - user:
+              name:
+              image:
+            date:
+            title:
+            comment:
+            rating: 3
+            shop_id:
+            image:
+      pagination:
+        type: object
+        $ref: '#/definitions/Pagination_object'
+  
+  ImageResponse:
+    description: Ответ операция выполнена
+    type: object
+    required: 
+      - code
+      - massage
+      - id
+    properties:
+      code:
+        type: integer
+        readOnly: true
+      massage:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+      id:
+        type: string
+        description: Идентификатор. Для возможности передать картинку
+        example: 112233
+
+  GetUserInformationResponse:
+    description: Информация о пользователе
+    type: object
+    properties:
+      code:
+        type: integer
+        readOnly: true
+      massage:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+      user:
+        type: object
+        $ref: '#/definitions/User_object'
+  
+  GetOrganizationInformationResponse:
+    description: Информация об организации
+    type: object
+    properties:
+      code:
+        type: integer
+        readOnly: true
+      massage:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+      organization:
+        type: object
+        $ref: '#/definitions/Organization_object'
+  
+  CardInformationResponse:
+    description: Информация по карте
+    type: object
+    properties:
+      code:
+        type: integer
+        readOnly: true
+      massage:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+      card:
+        type: object
+        $ref: '#/definitions/Card_object'
+  
+  ListCardUserResponse:
+    description: Список карт пользователя
+    type: object
+    properties:
+      code:
+        type: integer
+        readOnly: true
+      massage:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+      cards:
+        type: array
+        items:
+          - $ref: '#/definitions/Card_object'
+        minItems: 1
+        
+        example: 
+          - id: ef348142-bb9e-11e5-a26b-5404a6b8123f
+            code: 111
+            barcode: 1236547894562 
+            name: Морозовская-золотая
+            description: Рарус
+            blocked: false
+            active: true
+            blocked_description: Заблокирована
+            balance: 0
+            date_active: 01.01.2015
+            date_deactivate: 01.01.2017 
+            date_last_transaction: timestamp
+            last_transaction: A95DF525-672C-450E-95E3-6B29E867C618
+            image: http://dns/res/hh2384j5.png
+        
+      pagination:
+        type: object
+        $ref: '#/definitions/Pagination_object'
+  
+  BalanceCardResponse:
+    description: Расшифровка баланса карты
+    type: object
+    required: 
+      - code
+      - massage
+      - balance
+      - balance_available
+      - last_transactions
+    properties:
+      code:
+        type: integer
+        readOnly: true
+      massage:
+        type: string
+        readOnly: true
+        example: Операция выполнена
+      balance:
+        type: integer
+        readOnly: true
+        example: 200
+        description: полный баланс(с учетом "протухших" и неактивированных баллов)
+      balance_available:
+        type: integer
+        readOnly: true
+        example: 150
+        description: доступный баланс(без учета "протухших" и неактивированных баллов)
+      last_transactions:
+        type: array
+        minItems: 1
+        
+        example: 
+          - date: 01.01.2016
+            sum: -500
+      bonusactive:
+        description: таблица сгорания 
+        type: array
+        minItems: 1
+        example:
+          - date: 01.01.2016
+            sum:  200
+            active_to:  01.03.2016
+            active_from:  01.09.2015
+        
+  Roles:
+    type: string
+    enum: 
+      - organization
+      - client
+  
+  User_object:
+    description: Пользователь
+    type: object
+    required: 
+      - name
+      - phone
+      - email
+      - gender
+      - birthdate
+      - recieve_notifications
+    properties:
+      name:
+        type: string
+        example: Иван
+      phone:
+        type: string
+        example: 7242567
+      email:
+        type: string
+        example: mors@rarus.ru
+      gender:
+        type: string
+        example: male
+      birthdate:
+        type: string
+        example: 01.01.1984
+      recieve_notifications:
+        type: boolean
+        example: true
+        
+  Organization_object:
+    description: Организ
+    type: object
+    required:
+      - id
+      - name
+      - short_description
+      - full_description
+      - email
+      - phone
+    properties:
+      id:
+        type: integer
+        example: 123123
+      name:
+        type: string
+        example: Спортмастер
+      short_description:
+        type: string
+        example: Спортмастер - это... 
+      full_description:
+        type: string
+        example: Спортмастер - это...
+      email:
+        type: string
+        example: sportmaster@mail.ru
+      phone:
+        type: string
+        example: 7242567
+      image:
+        type: string
+        example: http://dns/res/hh2384j5.png
+        
+  Card_object:
+    description: Карта
+    type: object
+    required: 
+      - id
+      - code
+      - barcode
+      - name
+      - description
+      - blocked
+      - active
+      - blocked_description
+      - balance
+      - date_active
+      - date_deactivate
+      - date_last_transaction
+      - last_transaction
+    properties:
+      id:
+        type: string
+        example: ef348142-bb9e-11e5-a26b-5404a6b8123f
+      code:
+        type: integer
+        example: 111
+      barcode: 
+        type: string
+        example: //штрихкод
+      name: 
+        type: string
+        example: Морозовская-золотая
+      description:
+        type: string
+        example: Рарус
+      blocked: 
+        type: boolean
+        example: false // Признак блокировки
+      active:
+        type: boolean
+        example: true // Активирована/деактивирована
+      blocked_description:
+        type: string
+        example: Заблокирована потому что ...
+      balance:
+        type: integer
+        example: 0
+      date_active: 
+        type: string
+        example: 01.01.2015
+      date_deactivate:
+        type: string
+        example: 01.01.2017
+      date_last_transaction: 
+        type: string
+        example: timestamp //Дата активации
+      last_transaction:
+        type: string
+        example: A95DF525-672C-450E-95E3-6B29E867C618
+      image:
+        type: string
+        example: http://dns/res/hh2384j5.png
+  
+  Pagination_object:
+    type: object
+    required: 
+      - per_page
+      - page
+      - items
+      - pages
+    properties:
+      per_page:
+        type: integer
+        example: 10 
+      page:
+        type: integer
+        example: 1   
+      items:
+        type: integer
+        example: 325    
+      pages:
+        type: integer
+        example: 33
+        
+  Sale_object:
+    type: object
+    description: Продажа
+    required: 
+      - id
+      - date
+      - operation
+      - shop_id
+      - shop_name
+      - shop_address
+      - check_sum
+      - bonus_sum
+      - cashbox
+      - check_number
+      
+    properties:
+      id:
+        type: string
+        description: Идентификатор
+      date:
+        type: string
+        description: Дата
+        example: 178964266546
+      operation:
+        type: string
+        description: Операция покупка/продажа
+        enum: 
+          - sale
+          - refund
+        example:
+          - sale
+          - refund
+          
+      shop_id:
+        type: string
+        description: Идентификатор магазина     
+        example: "2d39df54-3428-4638-82e4-2509309462ac"
+      shop_name:
+        type: string
+        description: Наименование магазина      
+      shop_address:
+        type: string
+        description: Адрес магазина      
+      check_sum:
+        type: integer
+        description: Сумма по чеку      
+      bonus_sum:
+        type: integer
+        description: Количество бонусов по чеку(сумма всех транзакций по doc_id)      
+      cashbox:
+        type: integer
+        description: ...      
+      check_number:
+        type: integer
+        description: Номер чека 
+      details:
+        type: array
+        items:
+          $ref: '#/definitions/DetailsSale_Object'
+        minItems: 1
+  DetailsSale_Object:
+    type: object
+    description: Детали продажи
+    required:
+      - item
+      - quantity
+      - price
+      - discount
+    properties:
+      item: 
+        type: string
+        description:  Номенклатура
+        example: Куртка
+      quantity:
+        type: integer
+        description: Количество
+        example: 1
+      price: 
+        description: Цена
+        type: integer
+        example: 10.5
+      discount: 
+        description: Скидка
+        type: integer
+        example: 2
