@@ -5,37 +5,37 @@ info:
   title: Бонусный сервис
   contact:
     email: bonus@rarus.ru
-    x-logo:
-        url: https://serjmors.github.io/bonus-service-doc/rarus_logo.png
-        backgroundColor: "#FFFFFF"
-    
+  x-logo:
+    url: https://serjmors.github.io/bonus-service-doc/rarus_logo.png
+    backgroundColor: "#FFFFFF"
+        
 x-tagGroups:
-  
+
   - name: Настройки клиентского приложения
     tags:
       - Организации
       - Настройки поведения приложения
       - Изображения
-      
+
   - name: Пользователи
     tags:
       - Регистрация
       - Авторизация
       - Действия над паролем пользователя
       - Профили пользователей
-      
+
   - name: Управление картами
     tags:
-      - Карты      
-      
+      - Карты
+
   - name: Сервис информирования
     tags:
       - Оповещения
-      - Отзывы      
+      - Отзывы
       - История продаж
       - Акции
       - Магазины
-   
+      
 tags: 
   - name: Авторизация
   - name: Регистрация
